@@ -99,7 +99,7 @@ def compute_Nup_f(rx_subpulse, Fs_baseband, Fs_SWW):
     Nup = Fs_SWW / Fs_baseband * N
     num_zeros_padding = np.ceil((Nup - N) / 2)
     Nup_actual = num_zeros_padding + N + num_zeros_padding
-    return Nup_actual
+    return int(Nup_actual)
 
 
 # helper functions
