@@ -2,6 +2,7 @@ import numpy as np
 
 from scipy.fft import fft, ifft, fftfreq, fftshift, ifftshift
 import scipy.signal
+from scipy.signal import find_peaks
 
 
 #####################################################################
@@ -257,3 +258,29 @@ def measure_ACF_pulse_width(d_t, samp_freq):
 
     results = scipy.signal.peak_widths(ACF, peaks, rel_height=0.5)
     return results[0][0] * 1/samp_freq
+
+
+def peak_sidelobe_level(ACF):
+    """[summary]
+
+    Args:
+        ACF ([type]): [description] ACF = np.abs(d_t)
+    """
+    ACF_sorted = np.sort(ACF)
+
+    PSL = 20 * np.log10(
+        ACF_sorted[-2] / ACF_sorted[-1]
+    )  # notice the PSL is always a negative number,
+    # we want PSL to be as small as possible
+    # i.e. the more negative the better
+
+    return PSL
+
+
+def int_sidelobe_ratio(ACF):
+    peaks, _ = find_peaks(ACF, height=0)
+    main_lobe_energy = np.max(ACF) ** 2
+    total_sidelobe_energy = np.sum(ACF[peaks] ** 2) - main_lobe_energy
+
+    ISLR = 20*np.log10(total_sidelobe_energy / main_lobe_energy)
+    return ISLR
