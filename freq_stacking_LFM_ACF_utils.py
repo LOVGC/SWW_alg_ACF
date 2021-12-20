@@ -28,8 +28,6 @@ def freq_stacking(
     # do some sanity check
     if np.any(BW_RF_array > Fs_baseband):
         raise Exception("Subpulse BW is larger than Fs_baseband!")
-    
-    
 
     # compute the parameters of the RF_sww
     f_RF_sww_center, BW_RF_sww = compute_para_for_RF_sww(fc_RF_freqs, BW_RF_array)
@@ -39,10 +37,11 @@ def freq_stacking(
     )  # relative center freq. of each baseband subpulse
 
     if Fs_SWW < Fs_baseband:
-        print(f'Fs_SWW = {Fs_SWW}')
-        print(f'Fs_baseband = {Fs_baseband}')
-        raise Exception("Fs_SWW need to be larger than Fs_baseband for correct up-sampling operation")
-
+        print(f"Fs_SWW = {Fs_SWW}")
+        print(f"Fs_baseband = {Fs_baseband}")
+        raise Exception(
+            "Fs_SWW need to be larger than Fs_baseband for correct up-sampling operation"
+        )
 
     Nup_actual = compute_Nup_f(rx_subpulses[0], Fs_baseband, Fs_SWW)
     D_f = np.zeros(int(Nup_actual), dtype=rx_subpulses[0].dtype)
@@ -55,7 +54,64 @@ def freq_stacking(
         )
         D_f = D_f + Dn_f_read_for_stacking
 
-    D_f = np.conj(D_f) # to make the matlab result equal to to python result
+    D_f = np.conj(D_f)  # to make the matlab result equal to to python result
+    d_t = ifftshift(ifft(D_f))
+    return D_f, d_t
+
+
+def freq_stacking_v2(
+    rx_subpulses,
+    ref_subpulses,
+    fc_RF_freqs,
+    BW_RF_array,
+    Bs_array,
+    Fs_baseband,
+    subpulse_spectrum_weight,
+):
+    """[summary] returns the D_f and d_t
+
+    Args:
+        rx_subpulses ([type] 2D array): [description] each row is a rx subpulse at baseband
+        ref_subpulses ([type]2D array): [description] each row is a ref subpulse at baseband
+        fc_RF_freqs ([type] 1D array): [description] center freqs of each RF subpulse in Hz
+        BW_RF_array ([type] 1D array): [description] BWs of each RF subpulse in Hz
+        Bs_array ([type] 1D array): [description] BWs of the baseband filter for each subpulse in Hz
+        Fs_baseband ([type] real number): [description] sampling freq. of the baseband signal
+        subpulse_spectrum_weight ([type] 1D array): [description] subpulse spectrum weight
+    Returns:
+        D_f, d_t [type] 1D array: [description] the compresses SWW in freq. domain and time domain
+    """
+
+    # do some sanity check
+    if np.any(BW_RF_array > Fs_baseband):
+        raise Exception("Subpulse BW is larger than Fs_baseband!")
+
+    # compute the parameters of the RF_sww
+    f_RF_sww_center, BW_RF_sww = compute_para_for_RF_sww(fc_RF_freqs, BW_RF_array)
+    Fs_SWW = BW_RF_sww  # sampling freq of SWW at baseband
+    fcn_array = (
+        fc_RF_freqs - f_RF_sww_center
+    )  # relative center freq. of each baseband subpulse
+
+    if Fs_SWW < Fs_baseband:
+        print(f"Fs_SWW = {Fs_SWW}")
+        print(f"Fs_baseband = {Fs_baseband}")
+        raise Exception(
+            "Fs_SWW need to be larger than Fs_baseband for correct up-sampling operation"
+        )
+
+    Nup_actual = compute_Nup_f(rx_subpulses[0], Fs_baseband, Fs_SWW)
+    D_f = np.zeros(int(Nup_actual), dtype=rx_subpulses[0].dtype)
+
+    for ref_subpulse, rx_subpulse, Bs, fcn_baseband, weight in zip(
+        rx_subpulses, ref_subpulses, Bs_array, fcn_array, subpulse_spectrum_weight
+    ):
+        Dn_f_read_for_stacking = process_one_baseband_subpulse(
+            ref_subpulse, rx_subpulse, Bs, Fs_baseband, fcn_baseband, Fs_SWW
+        )
+        D_f = D_f + weight * Dn_f_read_for_stacking
+
+    D_f = np.conj(D_f)  # to make the matlab result equal to to python result
     d_t = ifftshift(ifft(D_f))
     return D_f, d_t
 
@@ -119,7 +175,7 @@ def process_one_baseband_subpulse(
         Fs_baseband ([type] real value): [description] the sampling frequency of the baseband signal
         fcn_baseband ([type] real value): [description] the relative center frequency of the subpulse at baseband
         Fs_SWW ([type] real value): [description] the sampling frequency of the SWW at baseband
-        
+
 
     Returns:
         Dn_f_read_for_stacking [type] 1-D array: [description] the filtered, up-sampled and freq. shifted Dn_f that is
@@ -147,16 +203,20 @@ def process_one_baseband_subpulse(
     Nup = Fs_SWW / Fs_baseband * N
     num_zeros_padding = np.ceil((Nup - N) / 2)
     Dn_f_up_sampled = np.concatenate(
-        (np.zeros(int(num_zeros_padding), dtype=Dn_f_filtered.dtype), Dn_f_filtered, np.zeros(int(num_zeros_padding), dtype=Dn_f_filtered.dtype))
+        (
+            np.zeros(int(num_zeros_padding), dtype=Dn_f_filtered.dtype),
+            Dn_f_filtered,
+            np.zeros(int(num_zeros_padding), dtype=Dn_f_filtered.dtype),
+        )
     )
 
     df = Fs_SWW / Nup
     num_shift = np.round(fcn_baseband / df)
 
-    
     Dn_f_read_for_stacking = np.roll(Dn_f_up_sampled, int(num_shift))
 
     return Dn_f_read_for_stacking
+
 
 #########################################################################################
 # Implementations of generating LFM signals
@@ -206,7 +266,10 @@ def rx_subpulse_generation(
     )
     return rx_subpulse
 
-def generate_LFM_rx_ref_subpulses_for_ACF(BW_RF_array, chirp_rate, time_window_size, Fs_baseband):
+
+def generate_LFM_rx_ref_subpulses_for_ACF(
+    BW_RF_array, chirp_rate, time_window_size, Fs_baseband
+):
     """[summary]
 
     Args:
@@ -217,27 +280,33 @@ def generate_LFM_rx_ref_subpulses_for_ACF(BW_RF_array, chirp_rate, time_window_s
 
     Returns:
         [type] Two 2D numpy arrays: [description] LFM_rx_subpulses, LFM_ref_subpulses with the same chirp rate
-    """    
+    """
 
-    pulse_durations = BW_RF_array / chirp_rate # pulse durations of each LFM signal
-    
+    pulse_durations = BW_RF_array / chirp_rate  # pulse durations of each LFM signal
+
     LFM_rx_subpulses = []
     LFM_ref_subpulses = []
 
     for Bi, Ti in zip(BW_RF_array, pulse_durations):
-        w_t_i = baseband_chirp_generation(Bi, Ti, Fs_baseband) # generate the baseband signal
+        w_t_i = baseband_chirp_generation(
+            Bi, Ti, Fs_baseband
+        )  # generate the baseband signal
 
-        rx_subpulse_i = rx_subpulse_generation(w_t_i, 0, 0, 0, time_window_size, Fs_baseband)
-        ref_subpulse_i = ref_subpulse_generation(w_t_i, 0, time_window_size, Fs_baseband)
+        rx_subpulse_i = rx_subpulse_generation(
+            w_t_i, 0, 0, 0, time_window_size, Fs_baseband
+        )
+        ref_subpulse_i = ref_subpulse_generation(
+            w_t_i, 0, time_window_size, Fs_baseband
+        )
 
         LFM_rx_subpulses.append(rx_subpulse_i)
         LFM_ref_subpulses.append(ref_subpulse_i)
-
 
     LFM_rx_subpulses = np.array(LFM_rx_subpulses)
     LFM_ref_subpulses = np.array(LFM_ref_subpulses)
 
     return LFM_rx_subpulses, LFM_ref_subpulses
+
 
 ##############################################################################
 # Measure ACF properties
@@ -251,13 +320,13 @@ def measure_ACF_pulse_width(d_t, samp_freq):
 
     Returns:
         [type] real number: [description] pulse width of the ACF
-    """    
+    """
     ACF = np.abs(d_t)
     peaks = np.argmax(ACF)
     peaks = np.array([peaks])
 
     results = scipy.signal.peak_widths(ACF, peaks, rel_height=0.5)
-    return results[0][0] * 1/samp_freq
+    return results[0][0] * 1 / samp_freq
 
 
 def peak_sidelobe_level(ACF):
@@ -282,5 +351,5 @@ def int_sidelobe_ratio(ACF):
     main_lobe_energy = np.max(ACF) ** 2
     total_sidelobe_energy = np.sum(ACF[peaks] ** 2) - main_lobe_energy
 
-    ISLR = 20*np.log10(total_sidelobe_energy / main_lobe_energy)
+    ISLR = 20 * np.log10(total_sidelobe_energy / main_lobe_energy)
     return ISLR
